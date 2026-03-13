@@ -14,6 +14,11 @@ const getApiKey = () => {
   return apiKey;
 };
 
+// 从环境变量获取模型名称（默认 qwen-vl-max）
+const getModelName = () => {
+  return process.env.MODEL_NAME || 'qwen-vl-max';
+};
+
 // 提交任务到阿里云百炼
 async function submitTask(imageBase64: string, prompt: string) {
   const apiKey = getApiKey();
@@ -23,9 +28,10 @@ async function submitTask(imageBase64: string, prompt: string) {
     ? imageBase64.split(',')[1]
     : imageBase64;
 
-  // 构建请求体 - 使用通义千问 VL 模型
+  // 构建请求体 - 使用环境变量配置的模型
+  const modelName = getModelName();
   const requestBody = {
-    model: 'qwen-vl-max',
+    model: modelName,
     input: {
       messages: [
         {
@@ -135,7 +141,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       result: generatedText,
-      model: 'qwen-vl-max'
+      model: modelName
     });
 
   } catch (error) {
