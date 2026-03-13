@@ -1,0 +1,6 @@
+# Cloudflare Pages 忽略文件
+
+.next/cache/**
+node_modules/**
+.git/**
+*.md

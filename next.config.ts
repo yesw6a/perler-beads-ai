@@ -30,6 +30,13 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // 禁用缓存，减小构建体积
+  experimental: {
+    // 禁用 SWC 缓存
+    swcFileReading: false,
+  },
+  // 配置输出
+  output: 'standalone',
 };
 
 export default withPWA(nextConfig);
