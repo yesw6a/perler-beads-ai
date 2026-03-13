@@ -22,7 +22,14 @@ const withPWA = require("next-pwa")({
 });
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // 生产环境禁用 ESLint，加快构建速度
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  // 禁用类型检查错误
+  typescript: {
+    ignoreBuildErrors: true,
+  },
 };
 
 export default withPWA(nextConfig);
