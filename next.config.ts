@@ -30,10 +30,14 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // 配置输出
-  output: 'standalone',
+  // 静态导出
+  output: 'export',
   // 禁用 telemetry
   telemetry: false,
+  // 禁用图像优化（静态导出需要）
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default withPWA(nextConfig);
