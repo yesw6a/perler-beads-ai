@@ -178,15 +178,14 @@ export async function optimizeImageWithAI(
     onProgress?.(80);
 
     if (!response.ok) {
-      // 尝试解析 JSON 错误，如果失败则使用文本
+      // 尝试解析 JSON 错误
       let errorMessage: string;
       try {
-        const errorData = await response.json();
-        errorMessage = errorData.message || `API request failed: ${response.status}`;
+        const errorData = await response.clone().json();
+        errorMessage = errorData.message || errorData.error || `API request failed: ${response.status}`;
       } catch {
-        // 如果不是 JSON，尝试获取文本
-        const errorText = await response.text();
-        errorMessage = errorText || `API request failed: ${response.status}`;
+        // 解析失败，使用状态码
+        errorMessage = `API request failed: ${response.status} ${response.statusText}`;
       }
       throw new Error(errorMessage);
     }

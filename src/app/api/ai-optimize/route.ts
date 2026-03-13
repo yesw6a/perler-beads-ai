@@ -23,6 +23,18 @@ const getDefaultColorSystem = () => {
   return process.env.DEFAULT_COLOR_SYSTEM || 'MARD';
 };
 
+// 处理 OPTIONS 预检请求
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    }
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { imageBase64, prompt, colorSystem } = await request.json();
