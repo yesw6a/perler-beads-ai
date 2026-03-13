@@ -1,16 +1,37 @@
 import { PaletteColor } from './pixelation';
 import colorSystemMapping from '../app/colorSystemMapping.json';
 
-// 定义色号系统类型并导出
-export type ColorSystem = 'MARD' | 'COCO' | '漫漫' | '盼盼' | '咪小窝';
+// 定义色号系统类型并导出（参考 pindou-draw 设计）
+export type ColorSystem = 
+  | 'DMC'         // DMC (默认 436 色)
+  | 'Kaka'        // 卡卡家 (283 色)
+  | 'ManMan'      // 漫漫家 (219 色)
+  | 'PanPan'      // 盼盼拼豆 (221 色)
+  | 'COCO'        // Coco (221 色)
+  | 'MARD24'      // MARD 24 色
+  | 'MARD48'      // MARD 48 色
+  | 'MARD72'      // MARD 72 色
+  | 'MARD96'      // MARD 96 色
+  | 'MARD120'     // MARD 120 色
+  | 'MARD144'     // MARD 144 色
+  | 'MARD221'     // MARD 221 色
+  | 'MARD295';    // MARD 295 色
 
-// 色号系统选项
+// 色号系统选项（参考 pindou-draw 设计）
 export const colorSystemOptions = [
-  { key: 'MARD', name: 'MARD' },
-  { key: 'COCO', name: 'COCO' },
-  { key: '漫漫', name: '漫漫' },
-  { key: '盼盼', name: '盼盼' },
-  { key: '咪小窝', name: '咪小窝' },
+  { key: 'DMC', name: 'DMC (默认) (436 色)' },
+  { key: 'Kaka', name: '卡卡家 (默认) (283 色)' },
+  { key: 'ManMan', name: '漫漫家 (默认) (219 色)' },
+  { key: 'PanPan', name: '盼盼拼豆 (默认) (221 色)' },
+  { key: 'COCO', name: 'Coco (默认) (221 色)' },
+  { key: 'MARD24', name: 'MARD 24 (默认) (24 色)' },
+  { key: 'MARD48', name: 'MARD 48 (默认) (48 色)' },
+  { key: 'MARD72', name: 'MARD 72 (默认) (72 色)' },
+  { key: 'MARD96', name: 'MARD 96 (默认) (96 色)' },
+  { key: 'MARD120', name: 'MARD 120 (默认) (120 色)' },
+  { key: 'MARD144', name: 'MARD 144 (默认) (144 色)' },
+  { key: 'MARD221', name: 'MARD 221 (默认) (221 色)' },
+  { key: 'MARD295', name: 'MARD 295 (默认) (295 色)' },
 ];
 
 // 类型定义
