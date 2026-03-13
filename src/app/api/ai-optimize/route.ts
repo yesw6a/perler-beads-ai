@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAllAvailableHexColors, getColorKeyByHex } from '../../../utils/beadColorSystems';
 
 // 阿里云百炼 API 配置 - 通义万相图片生成
 const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-to-image/image-synthesis';
@@ -17,6 +18,11 @@ const getApiKey = () => {
 // 从环境变量获取模型名称（默认 wanx-v1）
 const getModelName = () => {
   return process.env.MODEL_NAME || 'wanx-v1';
+};
+
+// 从环境变量获取默认色号系统
+const getDefaultColorSystem = () => {
+  return process.env.DEFAULT_COLOR_SYSTEM || 'MARD';
 };
 
 // 提交任务到通义万相
@@ -139,7 +145,7 @@ async function waitForTaskCompletion(taskId: string, maxAttempts = 60, intervalM
 
 export async function POST(request: NextRequest) {
   try {
-    const { imageBase64, prompt } = await request.json();
+    const { imageBase64, prompt, colorSystem } = await request.json();
 
     if (!imageBase64) {
       return NextResponse.json(
@@ -154,6 +160,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 使用请求中的色号系统或默认值
+    const targetColorSystem = colorSystem || getDefaultColorSystem();
+    
+    // 获取所有可用的拼豆色号
+    const availableColors = getAllAvailableHexColors();
 
     // 1. 提交任务
     console.log('Submitting AI image optimization task...');
@@ -186,7 +198,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imageUrl: imageUrl,
-      model: getModelName()
+      model: getModelName(),
+      colorSystem: targetColorSystem,
+      availableColors: availableColors.length,
+      message: `AI 优化完成，已适配 ${targetColorSystem} 色号系统，共 ${availableColors.length} 种可用颜色`
     });
 
   } catch (error) {
