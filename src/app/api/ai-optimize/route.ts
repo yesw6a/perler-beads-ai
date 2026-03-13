@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// 阿里云百炼 API 配置
-const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+// 阿里云百炼 API 配置 - 通义万相图片生成
+const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-to-image/image-synthesis';
 
 // 从环境变量获取 API Key
 const getApiKey = () => {
@@ -14,42 +14,33 @@ const getApiKey = () => {
   return apiKey;
 };
 
-// 从环境变量获取模型名称（默认 qwen-vl-max）
+// 从环境变量获取模型名称（默认 wanx-v1）
 const getModelName = () => {
-  return process.env.MODEL_NAME || 'qwen-vl-max';
+  return process.env.MODEL_NAME || 'wanx-v1';
 };
 
-// 提交任务到阿里云百炼
+// 提交任务到通义万相
 async function submitTask(imageBase64: string, prompt: string) {
   const apiKey = getApiKey();
+  const modelName = getModelName();
 
-  // 提取纯 base64 数据（去掉 data:image/png;base64,前缀）
+  // 提取纯 base64 数据
   const base64Data = imageBase64.includes(',')
     ? imageBase64.split(',')[1]
     : imageBase64;
 
-  // 构建请求体 - 使用环境变量配置的模型
-  const modelName = getModelName();
+  // 构建请求体 - 使用通义万相 API
   const requestBody = {
     model: modelName,
     input: {
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              image: `data:image/png;base64,${base64Data}`
-            },
-            {
-              text: prompt
-            }
-          ]
-        }
-      ]
+      prompt: prompt,
+      init_image: `data:image/png;base64,${base64Data}`,
+      strength: 0.5  // 重绘强度，0-1 之间
     },
     parameters: {
-      temperature: 0.7,
-      max_tokens: 2048
+      style: '<auto>',
+      size: '1024*1024',
+      n: 1
     }
   };
 
@@ -58,7 +49,8 @@ async function submitTask(imageBase64: string, prompt: string) {
   // 构建 headers
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'X-DashScope-Async': 'enable'  // 启用异步任务
   };
 
   // 发送请求
@@ -69,38 +61,80 @@ async function submitTask(imageBase64: string, prompt: string) {
   });
 
   const responseText = await response.text();
-  console.log('Alibaba API Response:', response.status, responseText);
+  console.log('Alibaba Wanx API Response:', response.status, responseText);
 
   if (!response.ok) {
-    // 尝试解析错误信息
     try {
       const errorData = JSON.parse(responseText);
       const errorCode = errorData.code;
       const errorMessage = errorData.message || '';
 
-      // 图片风险检测
       if (errorMessage.includes('risk') || errorMessage.includes('安全')) {
         throw new Error(`IMAGE_RISK: 图片未能通过安全检测，请尝试使用其他图片。`);
       }
       
       throw new Error(`API Error ${errorCode}: ${errorMessage}`);
     } catch (e) {
-      if (e instanceof Error && e.message.startsWith('API Error') || e.message.startsWith('IMAGE_RISK')) {
+      if (e instanceof Error && (e.message.startsWith('API Error') || e.message.startsWith('IMAGE_RISK'))) {
         throw e;
       }
       throw new Error(`API request failed: ${response.status} ${responseText}`);
     }
   }
 
-  // 解析响应数据
   const data = JSON.parse(responseText);
-  
-  // 检查业务错误
-  if (data.output && data.output.choices && data.output.choices.length > 0) {
-    return data;
+  return data;
+}
+
+// 查询任务结果
+async function queryTask(taskId: string) {
+  const apiKey = getApiKey();
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json'
+  };
+
+  const response = await fetch(`https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`, {
+    method: 'GET',
+    headers: headers
+  });
+
+  const responseText = await response.text();
+  console.log('Task Query Response:', response.status, responseText);
+
+  if (!response.ok) {
+    throw new Error(`Task query failed: ${response.status} ${responseText}`);
   }
-  
-  throw new Error('Invalid response format from API');
+
+  return JSON.parse(responseText);
+}
+
+// 轮询等待任务完成
+async function waitForTaskCompletion(taskId: string, maxAttempts = 60, intervalMs = 3000): Promise<string> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    console.log(`Polling attempt ${attempt + 1}/${maxAttempts}...`);
+    const result = await queryTask(taskId);
+
+    if (result.output && result.output.task_status === 'SUCCEEDED') {
+      // 任务成功，返回图片 URL
+      if (result.output.results && result.output.results.length > 0) {
+        return result.output.results[0].url;
+      }
+      throw new Error('Task completed but no image URL returned');
+    } else if (result.output && result.output.task_status === 'FAILED') {
+      const errorMessage = result.output.message || 'Task failed';
+      if (errorMessage.includes('risk') || errorMessage.includes('安全')) {
+        throw new Error(`IMAGE_RISK: 图片未能通过安全检测，请尝试使用其他图片。`);
+      }
+      throw new Error(`Task failed: ${errorMessage}`);
+    }
+
+    // 等待后重试
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error('Task timeout: exceeded maximum polling attempts');
 }
 
 export async function POST(request: NextRequest) {
@@ -121,27 +155,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 调用阿里云百炼 API
-    console.log('Submitting AI optimization task to Alibaba...');
-    const result = await submitTask(imageBase64, prompt);
+    // 1. 提交任务
+    console.log('Submitting AI image optimization task...');
+    const submitResult = await submitTask(imageBase64, prompt);
 
-    // 提取生成的文本
-    const generatedText = result.output?.choices?.[0]?.message?.content || '';
-
-    if (!generatedText) {
+    // 检查是否有 task_id（异步任务）
+    let taskId = submitResult.output?.task_id;
+    if (!taskId) {
+      // 同步任务，直接返回结果
+      if (submitResult.output && submitResult.output.results && submitResult.output.results.length > 0) {
+        const imageUrl = submitResult.output.results[0].url;
+        return NextResponse.json({
+          success: true,
+          imageUrl: imageUrl,
+          model: getModelName()
+        });
+      }
       return NextResponse.json(
-        { error: 'No content generated', details: result },
+        { error: 'No task_id or results returned', details: submitResult },
         { status: 500 }
       );
     }
 
-    console.log('AI optimization completed');
+    console.log('Task submitted, ID:', taskId);
 
-    // 返回结果
+    // 2. 轮询等待任务完成
+    const imageUrl = await waitForTaskCompletion(taskId);
+
+    // 3. 返回结果
     return NextResponse.json({
       success: true,
-      result: generatedText,
-      model: modelName
+      imageUrl: imageUrl,
+      model: getModelName()
     });
 
   } catch (error) {
