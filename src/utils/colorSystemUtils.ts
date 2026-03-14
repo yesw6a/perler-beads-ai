@@ -1,7 +1,6 @@
-import { PaletteColor } from './pixelation';
 import colorSystemMapping from '../app/colorSystemMapping.json';
 
-// 定义色号系统类型并导出（参考 pindou-draw 设计）
+// 定义色号系统类型（参考 pindou-draw 设计）
 export type ColorSystem = 
   | 'DMC'         // DMC (默认 436 色)
   | 'Kaka'        // 卡卡家 (283 色)
@@ -38,24 +37,24 @@ export const colorSystemOptions = [
 type ColorMapping = Record<string, Record<ColorSystem, string>>;
 const typedColorSystemMapping = colorSystemMapping as ColorMapping;
 
-// 获取所有可用的hex值
+// 获取所有可用的 hex 值
 export function getAllHexValues(): string[] {
   return Object.keys(typedColorSystemMapping);
 }
 
-// 获取所有MARD色号到hex值的映射（用于向后兼容）
-export function getMardToHexMapping(): Record<string, string> {
+// 获取所有色号到 hex 值的映射
+export function getColorSystemToHexMapping(colorSystem: ColorSystem): Record<string, string> {
   const mapping: Record<string, string> = {};
   Object.entries(typedColorSystemMapping).forEach(([hex, colorData]) => {
-    const mardKey = colorData.MARD;
-    if (mardKey) {
-      mapping[mardKey] = hex;
+    const key = colorData[colorSystem];
+    if (key) {
+      mapping[key] = hex;
     }
   });
   return mapping;
 }
 
-// 从colorSystemMapping.json加载完整的颜色映射数据
+// 从 colorSystemMapping.json 加载完整的颜色映射数据
 export function loadFullColorMapping(): Map<string, Record<ColorSystem, string>> {
   const mapping = new Map<string, Record<ColorSystem, string>>();
   Object.entries(colorSystemMapping).forEach(([baseKey, colorData]) => {
@@ -65,10 +64,10 @@ export function loadFullColorMapping(): Map<string, Record<ColorSystem, string>>
 }
 
 // 将色板转换到指定色号系统
-export function convertPaletteToColorSystem(
-  palette: PaletteColor[],
+export function convertPaletteToColorSystem<T extends { hex: string; key: string }>(
+  palette: T[],
   colorSystem: ColorSystem
-): PaletteColor[] {
+): T[] {
   return palette.map(color => {
     const colorMapping = typedColorSystemMapping[color.hex];
     if (colorMapping && colorMapping[colorSystem]) {
@@ -81,17 +80,17 @@ export function convertPaletteToColorSystem(
   });
 }
 
-// 获取指定色号系统的显示键 - 基于hex值的简化版本
+// 获取指定色号系统的显示键
 export function getDisplayColorKey(hexValue: string, colorSystem: ColorSystem): string {
   // 对于特殊键（如透明键），直接返回原键
   if (hexValue === 'ERASE' || hexValue.length === 0 || hexValue === '?') {
     return hexValue;
   }
   
-  // 标准化hex值（确保大写）
+  // 标准化 hex 值（确保大写）
   const normalizedHex = hexValue.toUpperCase();
   
-  // 通过hex值从colorSystemMapping获取目标色号系统的值
+  // 通过 hex 值从 colorSystemMapping 获取目标色号系统的值
   const colorMapping = typedColorSystemMapping[normalizedHex];
   if (colorMapping && colorMapping[colorSystem]) {
     return colorMapping[colorSystem];
@@ -100,14 +99,14 @@ export function getDisplayColorKey(hexValue: string, colorSystem: ColorSystem): 
   return '?'; // 如果找不到映射，返回 '?'
 }
 
-// 将色号键转换到hex值（支持任意色号系统）
+// 将色号键转换到 hex 值（支持任意色号系统）
 export function convertColorKeyToHex(displayKey: string, colorSystem: ColorSystem): string {
-  // 如果已经是hex值，直接返回
+  // 如果已经是 hex 值，直接返回
   if (displayKey.startsWith('#') && displayKey.length === 7) {
     return displayKey.toUpperCase();
   }
   
-  // 在colorSystemMapping中查找对应的hex值
+  // 在 colorSystemMapping 中查找对应的 hex 值
   for (const [hex, mapping] of Object.entries(typedColorSystemMapping)) {
     if (mapping[colorSystem] === displayKey) {
       return hex;
@@ -123,9 +122,9 @@ export function isValidColorInSystem(hexValue: string, colorSystem: ColorSystem)
   return mapping && mapping[colorSystem] !== undefined;
 }
 
-// 通过hex值获取指定色号系统的色号
+// 通过 hex 值获取指定色号系统的色号
 export function getColorKeyByHex(hexValue: string, colorSystem: ColorSystem): string {
-  // 标准化hex值（确保大写）
+  // 标准化 hex 值（确保大写）
   const normalizedHex = hexValue.toUpperCase();
   
   // 查找映射
@@ -138,12 +137,12 @@ export function getColorKeyByHex(hexValue: string, colorSystem: ColorSystem): st
   return '?';
 }
 
-// 将hex颜色转换为HSL
+// 将 hex 颜色转换为 HSL
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
   // 移除 # 符号
   const cleanHex = hex.replace('#', '');
   
-  // 转换为RGB
+  // 转换为 RGB
   const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
   const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
   const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
@@ -182,16 +181,39 @@ export function sortColorsByHue<T extends { color: string }>(colors: T[]): T[] {
     const hslB = hexToHsl(b.color);
     
     // 首先按色相排序
-    if (Math.abs(hslA.h - hslB.h) > 5) { // 增加色相容差，让更相近的色相归为一组
+    if (Math.abs(hslA.h - hslB.h) > 5) {
       return hslA.h - hslB.h;
     }
     
     // 色相相近时，按明度排序（从浅到深）
     if (Math.abs(hslA.l - hslB.l) > 3) {
-      return hslB.l - hslA.l; // 浅色（高明度）在前，深色（低明度）在后
+      return hslB.l - hslA.l;
     }
     
-    // 明度也相近时，按饱和度排序（高饱和度在前，让鲜艳的颜色更突出）
+    // 明度也相近时，按饱和度排序
     return hslB.s - hslA.s;
   });
-} 
+}
+
+// 获取色号系统的颜色数量
+export function getColorSystemColorCount(colorSystem: ColorSystem): number {
+  const colorKeys = new Set<string>();
+  Object.values(typedColorSystemMapping).forEach(mapping => {
+    if (mapping[colorSystem]) {
+      colorKeys.add(mapping[colorSystem]);
+    }
+  });
+  return colorKeys.size;
+}
+
+// 获取推荐色号系统（根据颜色数量）
+export function getRecommendedColorSystem(colorCount: number): ColorSystem {
+  if (colorCount <= 24) return 'MARD24';
+  if (colorCount <= 48) return 'MARD48';
+  if (colorCount <= 72) return 'MARD72';
+  if (colorCount <= 96) return 'MARD96';
+  if (colorCount <= 120) return 'MARD120';
+  if (colorCount <= 144) return 'MARD144';
+  if (colorCount <= 221) return 'MARD221';
+  return 'MARD295';
+}
