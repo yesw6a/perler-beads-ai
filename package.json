@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && rm -rf .next/cache && echo '{\"version\":1,\"include\":[\"/*\"],\"exclude\":[\"/_next/static/*\"]}' > out/_routes.json",
+    "build": "next build && rm -rf .next/cache && echo '{\"version\":1,\"include\":[\"/api/*\"],\"exclude\":[]}' > .next/routes.json",
     "start": "next start",
     "lint": "next lint"
   },
