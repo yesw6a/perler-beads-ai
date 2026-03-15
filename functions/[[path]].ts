@@ -1,6 +1,8 @@
 /**
  * Cloudflare Pages Function - AI 优化图片
  * 使用阿里云百炼 Qwen-Image 2.0 API
+ * 
+ * 安全说明：API Key 由客户端提供，不存储在服务器
  */
 
 import { ExecutionContext } from '@cloudflare/workers-types';
@@ -13,7 +15,8 @@ const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/ima
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Model-Name',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
 // 处理 OPTIONS 请求 (CORS preflight)
@@ -26,12 +29,12 @@ export async function onRequestOptions(context: EventContext): Promise<Response>
 
 // 处理 POST 请求
 export async function onRequestPost(context: EventContext): Promise<Response> {
-  const { request, env } = context;
+  const { request } = context;
   const url = new URL(request.url);
   
   // 路由到具体的 API 处理函数
   if (url.pathname === '/api/ai-optimize') {
-    return handleAiOptimize(request, env);
+    return handleAiOptimize(request);
   }
   
   return new Response(
@@ -40,13 +43,14 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
   );
 }
 
-// AI 优化处理函数（Qwen-Image 2.0 格式）
-async function handleAiOptimize(request: Request, env: any): Promise<Response> {
+// AI 优化处理函数
+async function handleAiOptimize(request: Request): Promise<Response> {
   const headers = new Headers(corsHeaders);
   
   try {
-    const { imageBase64, prompt } = await request.json();
+    const { imageBase64, prompt, apiKey, modelName } = await request.json();
 
+    // 验证必需参数
     if (!imageBase64) {
       return new Response(
         JSON.stringify({ error: 'Missing imageBase64 parameter' }),
@@ -61,17 +65,30 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
       );
     }
 
-    // 从环境变量获取 API Key
-    const apiKey = env.ALIBABA_API_KEY || env.DASHSCOPE_API_KEY;
+    // ⭐ 从请求体获取 API Key（运行时输入）
     if (!apiKey) {
-      console.error('Missing ALIBABA_API_KEY');
       return new Response(
-        JSON.stringify({ error: 'Missing ALIBABA_API_KEY environment variable. Please configure it in Cloudflare Dashboard.' }),
-        { status: 500, headers }
+        JSON.stringify({ 
+          error: 'Missing API Key',
+          message: 'Please provide your Alibaba API Key in the request body'
+        }),
+        { status: 401, headers }
       );
     }
 
-    const modelName = env.MODEL_NAME || 'qwen-image-2.0';
+    // 验证 API Key 格式
+    if (!apiKey.startsWith('sk-')) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid API Key format',
+          message: 'API Key should start with "sk-"'
+        }),
+        { status: 401, headers }
+      );
+    }
+
+    // 默认模型
+    const model = modelName || 'qwen-image-2.0';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
@@ -79,9 +96,8 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
       : imageBase64;
 
     // Qwen-Image 2.0 请求格式
-    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
     const requestBody = {
-      model: modelName,
+      model: model,
       input: {
         image: `data:image/png;base64,${base64Data}`,
         prompt: prompt
@@ -95,7 +111,7 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
 
     console.log('Submitting AI optimization task...');
     console.log('API URL:', ALIBABA_API_URL);
-    console.log('Model:', modelName);
+    console.log('Model:', model);
 
     // 调用阿里云百炼 API（带重试）
     let lastError: Error | null = null;
@@ -163,15 +179,25 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
         
         if (errorMessage.includes('invalid') || errorMessage.includes('Invalid') || errorCode === 'InvalidApiKey') {
           return new Response(
-            JSON.stringify({ error: 'Invalid API Key. Please check your ALIBABA_API_KEY configuration.' }),
+            JSON.stringify({ 
+              error: 'Invalid API Key',
+              message: 'Please check your API Key. It should be a valid Alibaba Cloud API Key starting with "sk-".'
+            }),
             { status: 401, headers }
           );
         }
 
         if (errorCode === 'ModelNotFound') {
           return new Response(
-            JSON.stringify({ error: `Model not found: ${modelName}. Please use 'qwen-image-2.0' or 'qwen-vl-max'.'` }),
+            JSON.stringify({ error: `Model not found: ${model}. Please use 'qwen-image-2.0' or 'qwen-vl-max'.` }),
             { status: 400, headers }
+          );
+        }
+
+        if (errorCode === 'QuotaExhausted') {
+          return new Response(
+            JSON.stringify({ error: 'API Quota exhausted. Please check your Alibaba Cloud account.' }),
+            { status: 429, headers }
           );
         }
         
@@ -190,23 +216,10 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
     const data = JSON.parse(responseText);
     
     // Qwen-Image 2.0 响应格式
-    // {
-    //   "output": {
-    //     "task_id": "...",
-    //     "task_status": "SUCCEEDED",
-    //     "results": [
-    //       {
-    //         "url": "https://..."
-    //       }
-    //     ]
-    //   }
-    // }
-    
     if (!data.output || !data.output.results || !data.output.results[0] || !data.output.results[0].url) {
       // 检查是否是异步任务
       if (data.output && data.output.task_id) {
         console.log('Async task created:', data.output.task_id);
-        // 对于异步任务，需要轮询获取结果
         return await pollTaskResult(data.output.task_id, apiKey, headers);
       }
       
@@ -223,7 +236,7 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
       JSON.stringify({
         success: true,
         imageUrl: imageUrl,
-        model: modelName
+        model: model
       }),
       { status: 200, headers }
     );

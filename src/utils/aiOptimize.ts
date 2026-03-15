@@ -4,6 +4,8 @@ const DEFAULT_PROMPT = '图片修改为：chibi 画风，背景白底。pixel ar
 
 export interface AIOptimizeOptions {
   customPrompt?: string;
+  apiKey?: string;        // 运行时输入的 API Key
+  modelName?: string;     // 运行时输入的模型名称
   onProgress?: (progress: number) => void;
 }
 
@@ -153,7 +155,7 @@ export async function optimizeImageWithAI(
   options: AIOptimizeOptions = {}
 ): Promise<AIOptimizeResult> {
   try {
-    const { customPrompt, onProgress } = options;
+    const { customPrompt, apiKey, modelName, onProgress } = options;
 
     // 更新进度
     onProgress?.(10);
@@ -171,7 +173,9 @@ export async function optimizeImageWithAI(
       },
       body: JSON.stringify({
         imageBase64: base64Image,
-        prompt: customPrompt || DEFAULT_PROMPT
+        prompt: customPrompt || DEFAULT_PROMPT,
+        apiKey: apiKey || '',      // 运行时输入的 API Key
+        modelName: modelName || 'qwen-image-2.0'  // 运行时输入的模型名称
       })
     });
 
