@@ -7,9 +7,9 @@
 
 import { ExecutionContext } from '@cloudflare/workers-types';
 
-// 阿里云百炼 API 配置 - Qwen-Image 2.0
-// 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
-const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation';
+// 阿里云百炼 API 配置 - 通义万相 wanx-v1（支持 Base64）
+// 文档：https://help.aliyun.com/zh/dashscope/developer-reference/wanx-api
+const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations';
 
 // CORS headers
 const corsHeaders = {
@@ -87,24 +87,22 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       );
     }
 
-    // 默认模型
-    const model = modelName || 'qwen-image-2.0';
+    // 默认模型 - 通义万相 wanx-v1（支持 Base64）
+    const model = modelName || 'wanx-v1';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
       ? imageBase64.split(',')[1]
       : imageBase64;
 
-    // Qwen-Image 2.0 请求格式
-    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
+    // 通义万相 wanx-v1 请求格式（OpenAI 兼容模式）
+    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/wanx-api
     const requestBody = {
       model: model,
-      input: {
-        image: `data:image/png;base64,${base64Data}`  // Base64 data URI 格式
-      },
-      parameters: {
-        prompt: prompt  // prompt 放在 parameters 里
-      }
+      prompt: prompt,
+      image: `data:image/png;base64,${base64Data}`,  // 支持 Base64 data URI
+      n: 1,
+      size: '1024x1024'
     };
 
     console.log('Submitting AI optimization task...');

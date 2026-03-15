@@ -18,7 +18,7 @@ const STORAGE_KEYS = {
 
 // 默认配置
 const DEFAULT_CONFIG = {
-  MODEL_NAME: 'qwen-image-2.0',
+  MODEL_NAME: 'wanx-v1',  // 通义万相（支持 Base64）
   PROMPT: '图片修改为：chibi 画风，背景白底。pixel art style, 16-bit, retro game aesthetic, sharp focus, high contrast, clean lines, detailed pixel art, masterpiece, best quality'
 };
 
@@ -234,9 +234,9 @@ export default function AIOptimizeModal({
                   disabled={isProcessing || !!previewImage}
                   className="w-full px-3 py-2 border border-blue-300 dark:border-blue-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                 >
-                  <option value="qwen-image-2.0">qwen-image-2.0 (推荐)</option>
-                  <option value="qwen-vl-max">qwen-vl-max</option>
-                  <option value="qwen-vl-plus">qwen-vl-plus</option>
+                  <option value="wanx-v1">wanx-v1 通义万相（推荐，支持 Base64）</option>
+                  <option value="wanx2.1-pro-turbo-v1">wanx2.1-pro-turbo-v1</option>
+                  <option value="wanx2.1-turbo-v1">wanx2.1-turbo-v1</option>
                 </select>
                 <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
                   不同模型效果和价格不同
