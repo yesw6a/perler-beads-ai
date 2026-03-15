@@ -42,6 +42,21 @@ export function getAllHexValues(): string[] {
   return Object.keys(typedColorSystemMapping);
 }
 
+// 获取 MARD 色号到 Hex 的映射（用于向后兼容）
+export function getMardToHexMapping(): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  Object.entries(typedColorSystemMapping).forEach(([hex, colorData]) => {
+    // 支持所有 MARD 色号系统
+    (['MARD24', 'MARD48', 'MARD72', 'MARD96', 'MARD120', 'MARD144', 'MARD221', 'MARD295'] as ColorSystem[]).forEach(mardSystem => {
+      const key = colorData[mardSystem];
+      if (key) {
+        mapping[key] = hex;
+      }
+    });
+  });
+  return mapping;
+}
+
 // 获取所有色号到 hex 值的映射
 export function getColorSystemToHexMapping(colorSystem: ColorSystem): Record<string, string> {
   const mapping: Record<string, string> = {};
