@@ -39,6 +39,12 @@ export default function AIOptimizeModal({
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
+  const [pollingStatus, setPollingStatus] = useState<{
+    attempts: number;
+    startTime: number;
+    taskId?: string;
+  } | null>(null);
+  const [shouldStopPolling, setShouldStopPolling] = useState(false);
 
   // 从 LocalStorage 加载配置
   useEffect(() => {
@@ -65,9 +71,19 @@ export default function AIOptimizeModal({
     }
   }, [apiKey, modelName]);
 
-  // 轮询任务结果（最多 150 次 = 5 分钟）
-  const pollTaskResult = useCallback(async (taskId: string, maxAttempts: number = 150): Promise<string | null> => {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  // 轮询任务结果（无限轮询，直到成功或用户取消）
+  const pollTaskResult = useCallback(async (taskId: string): Promise<string | null> => {
+    let attempt = 0;
+    const startTime = Date.now();
+    
+    setPollingStatus({
+      attempts: 0,
+      startTime,
+      taskId
+    });
+    
+    while (!shouldStopPolling) {
+      attempt++;
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       try {
@@ -81,13 +97,20 @@ export default function AIOptimizeModal({
         
         if (result.success && result.imageUrl) {
           setProgress(100);
+          setPollingStatus(null);
           return result.imageUrl;
         }
         
         if (result.pending) {
-          // 任务进行中，更新进度
-          const progress = Math.min(90, 10 + Math.floor((attempt / maxAttempts) * 80));
+          // 任务进行中，更新进度和状态
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const progress = Math.min(90, 10 + Math.floor((elapsed / 300) * 80)); // 5 分钟后到 90%
           setProgress(progress);
+          setPollingStatus({
+            attempts: attempt,
+            startTime,
+            taskId
+          });
           continue;
         }
         
@@ -100,21 +123,14 @@ export default function AIOptimizeModal({
         const errorMsg = error instanceof Error ? error.message : 'Poll error';
         // 网络错误继续轮询，不中断
         console.log(`Poll attempt ${attempt} error:`, errorMsg);
-        
-        if (attempt >= maxAttempts) {
-          // 达到最大轮询次数（5 分钟）
-          throw new Error(`任务仍在后台处理中（已等待 5 分钟）。
-          
-💡 提示：额度已扣除，说明任务已提交成功。
-请刷新页面或稍后查看结果。
-
-任务 ID: ${taskId}`);
-        }
       }
     }
     
-    throw new Error('任务仍在处理中，请稍后重试。');
-  }, [apiKey]);
+    // 用户取消轮询
+    console.log('Polling stopped by user');
+    setPollingStatus(null);
+    return null;
+  }, [apiKey, shouldStopPolling]);
 
   const handleOptimize = useCallback(async () => {
     if (!imageSrc) return;
@@ -154,21 +170,19 @@ export default function AIOptimizeModal({
         const dataUrl = await downloadImageAsDataURL(result.imageUrl);
         setPreviewImage(dataUrl);
       } else if (result.pending && result.taskId) {
-        // 任务进行中，开始轮询（最多 5 分钟）
-        console.log('Task pending, starting polling (max 5 min):', result.taskId);
+        // 任务进行中，开始无限轮询
+        console.log('Task pending, starting infinite polling:', result.taskId);
         setProgress(10);
+        setShouldStopPolling(false);
         
-        try {
-          const imageUrl = await pollTaskResult(result.taskId);
-          if (imageUrl) {
-            const dataUrl = await downloadImageAsDataURL(imageUrl);
-            setPreviewImage(dataUrl);
-          }
-        } catch (pollError) {
-          // 轮询超时（5 分钟后）
-          const pollErrorMsg = pollError instanceof Error ? pollError.message : '轮询失败';
-          setError(`⏳ ${pollErrorMsg}`);
-          setProgress(95);
+        const imageUrl = await pollTaskResult(result.taskId);
+        if (imageUrl) {
+          const dataUrl = await downloadImageAsDataURL(imageUrl);
+          setPreviewImage(dataUrl);
+        } else {
+          // 用户取消轮询
+          setError('⏸️ 已停止轮询\n\n💡 提示：任务仍在后台处理中，额度已扣除。\n你可以稍后刷新页面查看结果，或重新点击优化继续轮询。');
+          setProgress(90);
         }
       } else {
         // 处理错误
@@ -202,8 +216,15 @@ export default function AIOptimizeModal({
       setError(errorMessage);
     } finally {
       setIsProcessing(false);
+      setShouldStopPolling(false);  // 重置停止标志
     }
   }, [imageSrc, customPrompt, apiKey, modelName, saveConfig, pollTaskResult]);
+
+  // 取消轮询
+  const handleStopPolling = useCallback(() => {
+    setShouldStopPolling(true);
+    setIsProcessing(false);
+  }, []);
 
   const handleConfirm = useCallback(() => {
     if (previewImage) {
@@ -373,10 +394,21 @@ export default function AIOptimizeModal({
                 ) : isProcessing ? (
                   <div className="text-center p-4">
                     <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">AI 处理中...</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{progress}%</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {pollingStatus ? 'AI 生成中...' : 'AI 处理中...'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                      进度：{progress}%
+                    </p>
+                    {pollingStatus && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 space-y-1">
+                        <p>轮询次数：{pollingStatus.attempts} 次</p>
+                        <p>已等待：{Math.floor((Date.now() - pollingStatus.startTime) / 1000)} 秒</p>
+                        <p className="text-blue-500">💡 额度已扣除，任务正在处理中</p>
+                      </div>
+                    )}
                     {/* 进度条 */}
-                    <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-2 mx-auto overflow-hidden">
+                    <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-3 mx-auto overflow-hidden">
                       <div
                         className="h-full bg-purple-500 transition-all duration-300"
                         style={{ width: `${progress}%` }}
@@ -412,13 +444,27 @@ export default function AIOptimizeModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           {!previewImage ? (
             <>
-              <button
-                onClick={onClose}
-                disabled={isProcessing}
-                className="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-              >
-                取消
-              </button>
+              {isProcessing && pollingStatus ? (
+                // 轮询中显示取消按钮
+                <button
+                  onClick={handleStopPolling}
+                  className="px-6 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                  </svg>
+                  停止轮询
+                </button>
+              ) : (
+                <button
+                  onClick={onClose}
+                  disabled={isProcessing}
+                  className="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  取消
+                </button>
+              )}
               <button
                 onClick={handleOptimize}
                 disabled={isProcessing || !apiKey.trim()}
@@ -430,7 +476,7 @@ export default function AIOptimizeModal({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    处理中...
+                    {pollingStatus ? '轮询中...' : '处理中...'}
                   </>
                 ) : (
                   <>
