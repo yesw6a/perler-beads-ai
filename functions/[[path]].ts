@@ -87,8 +87,8 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       );
     }
 
-    // 强制使用 wan2.6-image（忽略前端传来的模型名称）
-    const model = 'wan2.6-image';
+    // 强制使用 wanx-v1（通义万相，支持 Base64）
+    const model = 'wanx-v1';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
