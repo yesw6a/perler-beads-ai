@@ -30,9 +30,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // 静态导出到 out/ 目录（Cloudflare Pages 需要）
+  output: 'export',
   // 禁用 telemetry
   telemetry: false,
-  // 禁用图像优化
+  // 禁用图像优化（静态导出需要）
   images: {
     unoptimized: true,
   },
