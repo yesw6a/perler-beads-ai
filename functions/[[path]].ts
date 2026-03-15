@@ -136,7 +136,9 @@ async function handleAiOptimize(request: Request): Promise<Response> {
           break;
         }
         
-        const errorText = await response.text();
+        // 克隆响应以便读取 body
+        const errorResponse = response.clone();
+        const errorText = await errorResponse.text();
         console.log(`Attempt ${attempt} failed: HTTP ${response.status}`, errorText);
         lastError = new Error(`HTTP ${response.status}: ${errorText}`);
         
@@ -170,7 +172,9 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       );
     }
 
-    const responseText = await response.text();
+    // 克隆响应以便多次读取
+    const responseClone = response.clone();
+    const responseText = await responseClone.text();
     console.log('API Response:', response.status, responseText);
 
     if (!response.ok) {
@@ -198,7 +202,7 @@ async function handleAiOptimize(request: Request): Promise<Response> {
 
         if (errorCode === 'ModelNotFound') {
           return new Response(
-            JSON.stringify({ error: `Model not found: ${model}. Please use 'qwen-image-2.0' or 'qwen-vl-max'.` }),
+            JSON.stringify({ error: `Model not found: ${model}. Please use 'wan2.6-image' or 'wanx-v1'.` }),
             { status: 400, headers }
           );
         }
@@ -280,7 +284,9 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
         }
       });
       
-      const data = await response.json();
+      // 克隆响应以便读取
+      const responseClone = response.clone();
+      const data = await responseClone.json();
       console.log(`Task status (attempt ${attempt}):`, data.output?.task_status);
       
       if (data.output?.task_status === 'SUCCEEDED') {
@@ -289,7 +295,7 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
           JSON.stringify({
             success: true,
             imageUrl: imageUrl,
-            model: 'qwen-image-2.0'
+            model: 'wan2.6-image'
           }),
           { status: 200, headers }
         );
