@@ -349,11 +349,16 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
       console.log(`[Poll ${attempt}] Task status:`, data.output?.task_status);
       
       if (data.output?.task_status === 'SUCCEEDED') {
-        const imageUrl = data.output?.results?.[0]?.url;
+        // wan2.6-image 返回格式可能是 output.results[0].url 或 output.image
+        let imageUrl = data.output?.results?.[0]?.url || data.output?.image?.url || data.output?.image;
+        
         if (!imageUrl) {
           console.log('[Poll] Task succeeded but no image URL found');
+          console.log('[Poll] Full response:', JSON.stringify(data, null, 2));
+          // 继续轮询，可能是数据同步延迟
           continue;
         }
+        
         console.log('[Poll] Task completed! Image URL:', imageUrl);
         return new Response(
           JSON.stringify({

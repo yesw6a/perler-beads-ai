@@ -45,8 +45,6 @@ export default function AIOptimizeModal({
     taskId?: string;
   } | null>(null);
   const [shouldStopPolling, setShouldStopPolling] = useState(false);
-  const [showContinuePrompt, setShowContinuePrompt] = useState(false);
-  const [continueAfterTimeout, setContinueAfterTimeout] = useState(false);
 
   // 从 LocalStorage 加载配置
   useEffect(() => {
@@ -73,11 +71,10 @@ export default function AIOptimizeModal({
     }
   }, [apiKey, modelName]);
 
-  // 轮询任务结果（先轮询 5 分钟，然后询问用户是否继续）
+  // 轮询任务结果（无限轮询，直到成功或用户手动停止）
   const pollTaskResult = useCallback(async (taskId: string): Promise<string | null> => {
     let attempt = 0;
     const startTime = Date.now();
-    const firstTimeout = 5 * 60 * 1000; // 5 分钟后询问
     
     setPollingStatus({
       attempts: 0,
@@ -101,64 +98,19 @@ export default function AIOptimizeModal({
         if (result.success && result.imageUrl) {
           setProgress(100);
           setPollingStatus(null);
-          setShowContinuePrompt(false);
           return result.imageUrl;
         }
         
         if (result.pending) {
           // 任务进行中，更新进度和状态
-          const elapsed = Date.now() - startTime;
-          const elapsedMin = Math.floor(elapsed / 60000);
-          const progress = Math.min(90, 10 + Math.floor((elapsed / 600000) * 80)); // 10 分钟后到 90%
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const progress = Math.min(90, 10 + Math.floor((elapsed / 600) * 80)); // 10 分钟后到 90%
           setProgress(progress);
           setPollingStatus({
             attempts: attempt,
             startTime,
             taskId
           });
-          
-          // 5 分钟后询问用户是否继续
-          if (elapsed >= firstTimeout && !continueAfterTimeout && !showContinuePrompt) {
-            setShowContinuePrompt(true);
-            // 等待用户选择
-            while (showContinuePrompt && !continueAfterTimeout && !shouldStopPolling) {
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            if (shouldStopPolling) {
-              break;
-            }
-            if (continueAfterTimeout) {
-              setShowContinuePrompt(false);
-              // 用户选择继续，再轮询 5 分钟
-              const secondTimeout = Date.now() + 5 * 60 * 1000;
-              while (Date.now() < secondTimeout && !shouldStopPolling) {
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                // 继续轮询逻辑...
-                const pollResponse = await fetch(`/api/ai-optimize/poll?taskId=${taskId}`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ apiKey: apiKey.trim() })
-                });
-                const pollResult = await pollResponse.json();
-                
-                if (pollResult.success && pollResult.imageUrl) {
-                  setProgress(100);
-                  setPollingStatus(null);
-                  return pollResult.imageUrl;
-                }
-                if (pollResult.error) {
-                  throw new Error(pollResult.error);
-                }
-              }
-              // 10 分钟后再次询问
-              if (!shouldStopPolling) {
-                setShowContinuePrompt(true);
-                while (showContinuePrompt && !continueAfterTimeout && !shouldStopPolling) {
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                }
-              }
-            }
-          }
           continue;
         }
         
@@ -176,9 +128,8 @@ export default function AIOptimizeModal({
     // 用户取消轮询
     console.log('Polling stopped by user');
     setPollingStatus(null);
-    setShowContinuePrompt(false);
     return null;
-  }, [apiKey, shouldStopPolling, continueAfterTimeout, showContinuePrompt]);
+  }, [apiKey, shouldStopPolling]);
 
   const handleOptimize = useCallback(async () => {
     if (!imageSrc) return;
@@ -203,8 +154,6 @@ export default function AIOptimizeModal({
     setError(null);
     setPreviewImage(null);
     setShouldStopPolling(false);
-    setContinueAfterTimeout(false);
-    setShowContinuePrompt(false);
 
     try {
       const prompt = customPrompt.trim() || DEFAULT_CONFIG.PROMPT;
@@ -274,14 +223,7 @@ export default function AIOptimizeModal({
   // 取消轮询
   const handleStopPolling = useCallback(() => {
     setShouldStopPolling(true);
-    setShowContinuePrompt(false);
     setIsProcessing(false);
-  }, []);
-
-  // 继续等待
-  const handleContinueWaiting = useCallback(() => {
-    setContinueAfterTimeout(true);
-    setShowContinuePrompt(false);
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -452,9 +394,7 @@ export default function AIOptimizeModal({
                 ) : isProcessing ? (
                   <div className="text-center p-4">
                     <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {pollingStatus ? 'AI 生成中...' : 'AI 处理中...'}
-                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">AI 生成中...</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
                       进度：{progress}%
                     </p>
@@ -472,33 +412,6 @@ export default function AIOptimizeModal({
                         style={{ width: `${progress}%` }}
                       />
                     </div>
-                    
-                    {/* 继续等待提示 */}
-                    {showContinuePrompt && (
-                      <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                        <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium mb-2">
-                          ⏳ 已等待 5 分钟，AI 仍在生成中...
-                        </p>
-                        <p className="text-xs text-yellow-700 dark:text-yellow-300 mb-3">
-                          💡 额度已扣除，任务正在后台处理。<br/>
-                          是否继续等待？
-                        </p>
-                        <div className="flex gap-2 justify-center">
-                          <button
-                            onClick={handleContinueWaiting}
-                            className="px-4 py-2 rounded-lg bg-green-600 text-white text-xs hover:bg-green-700 transition-colors"
-                          >
-                            ✅ 继续等待
-                          </button>
-                          <button
-                            onClick={handleStopPolling}
-                            className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs hover:bg-red-700 transition-colors"
-                          >
-                            🛑 停止轮询
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="text-center p-4 text-gray-400 dark:text-gray-600">
@@ -529,13 +442,14 @@ export default function AIOptimizeModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           {!previewImage ? (
             <>
-              {showContinuePrompt ? (
-                // 显示继续等待提示时，不显示其他按钮
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  请在上方选择是否继续等待
-                </div>
-              ) : isProcessing && pollingStatus ? (
-                // 轮询中显示取消按钮
+              <button
+                onClick={onClose}
+                disabled={isProcessing}
+                className="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+              >
+                取消
+              </button>
+              {isProcessing && pollingStatus && (
                 <button
                   onClick={handleStopPolling}
                   className="px-6 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition-colors flex items-center gap-2"
@@ -546,18 +460,10 @@ export default function AIOptimizeModal({
                   </svg>
                   停止轮询
                 </button>
-              ) : (
-                <button
-                  onClick={onClose}
-                  disabled={isProcessing}
-                  className="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-                >
-                  取消
-                </button>
               )}
               <button
                 onClick={handleOptimize}
-                disabled={isProcessing || !apiKey.trim() || showContinuePrompt}
+                disabled={isProcessing || !apiKey.trim()}
                 className="px-6 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
                 {isProcessing ? (
@@ -566,7 +472,7 @@ export default function AIOptimizeModal({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    {pollingStatus ? '轮询中...' : '处理中...'}
+                    轮询中...
                   </>
                 ) : (
                   <>
