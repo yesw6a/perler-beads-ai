@@ -80,26 +80,35 @@ export default function AIOptimizeModal({
         const result = await response.json();
         
         if (result.success && result.imageUrl) {
+          setProgress(100);
           return result.imageUrl;
         }
         
         if (result.pending) {
-          setProgress(Math.min(90, 10 + Math.floor((attempt / maxAttempts) * 80)));
+          // 任务进行中，更新进度
+          const progress = Math.min(90, 10 + Math.floor((attempt / maxAttempts) * 80));
+          setProgress(progress);
           continue;
         }
         
-        throw new Error(result.error || result.message || 'Task failed');
+        // 任务失败
+        if (result.error) {
+          throw new Error(result.error);
+        }
         
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Poll error';
-        if (attempt >= maxAttempts) {
-          throw new Error('Task timeout. Please try again.');
-        }
+        // 网络错误继续轮询，不中断
         console.log(`Poll attempt ${attempt} error:`, errorMsg);
+        
+        if (attempt >= maxAttempts) {
+          // 达到最大轮询次数，提示用户重试
+          throw new Error('任务仍在处理中，请稍后重试。任务 ID: ' + taskId);
+        }
       }
     }
     
-    throw new Error('Task timeout');
+    throw new Error('任务仍在处理中，请稍后重试。');
   }, [apiKey]);
 
   const handleOptimize = useCallback(async () => {
@@ -144,10 +153,17 @@ export default function AIOptimizeModal({
         console.log('Task pending, starting polling:', result.taskId);
         setProgress(10);
         
-        const imageUrl = await pollTaskResult(result.taskId);
-        if (imageUrl) {
-          const dataUrl = await downloadImageAsDataURL(imageUrl);
-          setPreviewImage(dataUrl);
+        try {
+          const imageUrl = await pollTaskResult(result.taskId);
+          if (imageUrl) {
+            const dataUrl = await downloadImageAsDataURL(imageUrl);
+            setPreviewImage(dataUrl);
+          }
+        } catch (pollError) {
+          // 轮询超时，但任务可能仍在后台处理
+          const pollErrorMsg = pollError instanceof Error ? pollError.message : '轮询失败';
+          setError(`任务提交成功！${pollErrorMsg}\n\n💡 提示：额度已扣除，图片正在生成中。\n请稍等片刻后刷新页面查看结果。`);
+          setProgress(90);
         }
       } else {
         // 处理错误
@@ -171,7 +187,11 @@ export default function AIOptimizeModal({
       } else if (errorMessage.includes('network') || errorMessage.includes('Network')) {
         errorMessage = '网络连接失败，请检查：\n• 网络连接是否正常\n• API Key 是否正确\n• 阿里云服务是否可用';
       } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
-        errorMessage = '任务超时，AI 生成需要较长时间（1-2 分钟）。\n请等待片刻后重试，或检查阿里云账号状态。';
+        // 超时错误 - 友好提示
+        errorMessage = '⏳ AI 正在努力生成中...\n\n任务已提交成功，额度已扣除。\n由于 AI 生成需要较长时间（1-2 分钟），\n请稍等片刻后刷新页面查看结果。';
+      } else {
+        // 其他错误
+        errorMessage = `⏳ 任务处理中...\n\n${errorMessage}\n\n💡 如果额度已扣除，说明任务已提交成功。\n请稍等片刻后刷新页面查看结果。`;
       }
 
       setError(errorMessage);

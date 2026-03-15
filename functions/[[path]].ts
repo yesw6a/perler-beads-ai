@@ -48,17 +48,22 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
       );
     }
     
-    // 从请求体获取 API Key
+    // 从请求体获取 API Key（如果提供）
     const body = await request.json().catch(() => ({}));
     const apiKey = body.apiKey;
-    if (!apiKey) {
+    
+    // 如果没有 API Key，尝试从环境变量获取（部署时配置）
+    const envApiKey = (context as any).env?.ALIBABA_API_KEY || (context as any).env?.DASHSCOPE_API_KEY;
+    const finalApiKey = apiKey || envApiKey;
+    
+    if (!finalApiKey) {
       return new Response(
-        JSON.stringify({ error: 'Missing apiKey in request body' }),
+        JSON.stringify({ error: 'Missing API Key. Please provide apiKey in request body or configure ALIBABA_API_KEY environment variable.' }),
         { status: 400, headers: corsHeaders }
       );
     }
     
-    return pollTaskResult(taskId, apiKey, corsHeaders);
+    return pollTaskResult(taskId, finalApiKey, corsHeaders);
   }
   
   return new Response(

@@ -192,7 +192,7 @@ export async function optimizeImageWithAI(
           success: false,
           pending: true,
           taskId: result.taskId,
-          message: result.message
+          message: result.message || 'Task is processing'
         };
       }
       
@@ -222,7 +222,7 @@ export async function optimizeImageWithAI(
         success: false,
         pending: true,
         taskId: result.taskId,
-        message: result.message
+        message: result.message || 'Task is processing'
       };
     } else {
       throw new Error(result.error || 'Unknown error');
