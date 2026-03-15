@@ -87,16 +87,15 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       );
     }
 
-    // 默认模型 - 通义万相 wanx-v1（支持 Base64）
-    const model = modelName || 'wanx-v1';
+    // 默认模型 - wan2.6-image（支持 Base64）
+    const model = modelName || 'wan2.6-image';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
       ? imageBase64.split(',')[1]
       : imageBase64;
 
-    // 通义万相 wanx-v1 请求格式（OpenAI 兼容模式）
-    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/wanx-api
+    // wan2.6-image 请求格式（OpenAI 兼容模式）
     const requestBody = {
       model: model,
       prompt: prompt,
