@@ -30,11 +30,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // 静态导出
-  output: 'export',
   // 禁用 telemetry
   telemetry: false,
-  // 禁用图像优化（静态导出需要）
+  // 禁用图像优化
   images: {
     unoptimized: true,
   },
