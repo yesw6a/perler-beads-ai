@@ -1,12 +1,13 @@
 /**
  * Cloudflare Pages Function - AI 优化图片
- * 使用阿里云百炼 API (通义万相)
+ * 使用阿里云百炼 Qwen-Image 2.0 API
  */
 
 import { ExecutionContext } from '@cloudflare/workers-types';
 
-// 阿里云百炼 API 配置 - OpenAI 兼容模式
-const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations';
+// 阿里云百炼 API 配置 - Qwen-Image 2.0
+// 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
+const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation';
 
 // CORS headers
 const corsHeaders = {
@@ -39,7 +40,7 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
   );
 }
 
-// AI 优化处理函数（带重试机制）
+// AI 优化处理函数（Qwen-Image 2.0 格式）
 async function handleAiOptimize(request: Request, env: any): Promise<Response> {
   const headers = new Headers(corsHeaders);
   
@@ -70,20 +71,26 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
       );
     }
 
-    const modelName = env.MODEL_NAME || 'wanx-v1';
+    const modelName = env.MODEL_NAME || 'qwen-image-2.0';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
       ? imageBase64.split(',')[1]
       : imageBase64;
 
-    // 构建请求体
+    // Qwen-Image 2.0 请求格式
+    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
     const requestBody = {
       model: modelName,
-      prompt: prompt,
-      image: `data:image/png;base64,${base64Data}`,
-      n: 1,
-      size: '1024x1024'
+      input: {
+        image: `data:image/png;base64,${base64Data}`,
+        prompt: prompt
+      },
+      parameters: {
+        style: '<auto>',
+        size: '1024*1024',
+        n: 1
+      }
     };
 
     console.log('Submitting AI optimization task...');
@@ -100,7 +107,8 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-DashScope-WorkSpace': 'default'
           },
           body: JSON.stringify(requestBody)
         });
@@ -143,7 +151,8 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
     if (!response.ok) {
       try {
         const errorData = JSON.parse(responseText);
-        const errorMessage = errorData.error?.message || '';
+        const errorMessage = errorData.message || errorData.error?.message || '';
+        const errorCode = errorData.code || errorData.error?.code || '';
 
         if (errorMessage.includes('risk') || errorMessage.includes('安全')) {
           return new Response(
@@ -152,15 +161,22 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
           );
         }
         
-        if (errorMessage.includes('invalid') || errorMessage.includes('Invalid')) {
+        if (errorMessage.includes('invalid') || errorMessage.includes('Invalid') || errorCode === 'InvalidApiKey') {
           return new Response(
             JSON.stringify({ error: 'Invalid API Key. Please check your ALIBABA_API_KEY configuration.' }),
             { status: 401, headers }
           );
         }
+
+        if (errorCode === 'ModelNotFound') {
+          return new Response(
+            JSON.stringify({ error: `Model not found: ${modelName}. Please use 'qwen-image-2.0' or 'qwen-vl-max'.'` }),
+            { status: 400, headers }
+          );
+        }
         
         return new Response(
-          JSON.stringify({ error: `API Error: ${errorMessage}` }),
+          JSON.stringify({ error: `API Error (${errorCode}): ${errorMessage}` }),
           { status: response.status, headers }
         );
       } catch (e) {
@@ -173,14 +189,34 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
 
     const data = JSON.parse(responseText);
     
-    if (!data.data || !data.data[0] || !data.data[0].url) {
+    // Qwen-Image 2.0 响应格式
+    // {
+    //   "output": {
+    //     "task_id": "...",
+    //     "task_status": "SUCCEEDED",
+    //     "results": [
+    //       {
+    //         "url": "https://..."
+    //       }
+    //     ]
+    //   }
+    // }
+    
+    if (!data.output || !data.output.results || !data.output.results[0] || !data.output.results[0].url) {
+      // 检查是否是异步任务
+      if (data.output && data.output.task_id) {
+        console.log('Async task created:', data.output.task_id);
+        // 对于异步任务，需要轮询获取结果
+        return await pollTaskResult(data.output.task_id, apiKey, headers);
+      }
+      
       return new Response(
-        JSON.stringify({ error: 'Invalid response format from API' }),
+        JSON.stringify({ error: 'Invalid response format from API', raw: data }),
         { status: 500, headers }
       );
     }
 
-    const imageUrl = data.data[0].url;
+    const imageUrl = data.output.results[0].url;
     console.log('AI optimization completed');
 
     return new Response(
@@ -202,4 +238,55 @@ async function handleAiOptimize(request: Request, env: any): Promise<Response> {
       { status: 500, headers }
     );
   }
+}
+
+// 轮询异步任务结果
+async function pollTaskResult(taskId: string, apiKey: string, headers: Headers): Promise<Response> {
+  const taskUrl = `https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`;
+  
+  console.log('Polling task result:', taskId);
+  
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    try {
+      const response = await fetch(taskUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      console.log(`Task status (attempt ${attempt}):`, data.output?.task_status);
+      
+      if (data.output?.task_status === 'SUCCEEDED') {
+        const imageUrl = data.output.results[0].url;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            imageUrl: imageUrl,
+            model: 'qwen-image-2.0'
+          }),
+          { status: 200, headers }
+        );
+      }
+      
+      if (data.output?.task_status === 'FAILED') {
+        return new Response(
+          JSON.stringify({ error: 'Task failed: ' + (data.output?.message || 'Unknown error') }),
+          { status: 500, headers }
+        );
+      }
+      
+    } catch (error) {
+      console.log('Poll error:', error.message);
+    }
+  }
+  
+  return new Response(
+    JSON.stringify({ error: 'Task timeout. Please try again.' }),
+    { status: 504, headers }
+  );
 }
