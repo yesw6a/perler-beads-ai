@@ -65,8 +65,8 @@ export default function AIOptimizeModal({
     }
   }, [apiKey, modelName]);
 
-  // 轮询任务结果
-  const pollTaskResult = useCallback(async (taskId: string, maxAttempts: number = 60): Promise<string | null> => {
+  // 轮询任务结果（最多 150 次 = 5 分钟）
+  const pollTaskResult = useCallback(async (taskId: string, maxAttempts: number = 150): Promise<string | null> => {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
@@ -102,8 +102,13 @@ export default function AIOptimizeModal({
         console.log(`Poll attempt ${attempt} error:`, errorMsg);
         
         if (attempt >= maxAttempts) {
-          // 达到最大轮询次数，提示用户重试
-          throw new Error('任务仍在处理中，请稍后重试。任务 ID: ' + taskId);
+          // 达到最大轮询次数（5 分钟）
+          throw new Error(`任务仍在后台处理中（已等待 5 分钟）。
+          
+💡 提示：额度已扣除，说明任务已提交成功。
+请刷新页面或稍后查看结果。
+
+任务 ID: ${taskId}`);
         }
       }
     }
@@ -149,8 +154,8 @@ export default function AIOptimizeModal({
         const dataUrl = await downloadImageAsDataURL(result.imageUrl);
         setPreviewImage(dataUrl);
       } else if (result.pending && result.taskId) {
-        // 任务进行中，开始轮询
-        console.log('Task pending, starting polling:', result.taskId);
+        // 任务进行中，开始轮询（最多 5 分钟）
+        console.log('Task pending, starting polling (max 5 min):', result.taskId);
         setProgress(10);
         
         try {
@@ -160,10 +165,10 @@ export default function AIOptimizeModal({
             setPreviewImage(dataUrl);
           }
         } catch (pollError) {
-          // 轮询超时，但任务可能仍在后台处理
+          // 轮询超时（5 分钟后）
           const pollErrorMsg = pollError instanceof Error ? pollError.message : '轮询失败';
-          setError(`任务提交成功！${pollErrorMsg}\n\n💡 提示：额度已扣除，图片正在生成中。\n请稍等片刻后刷新页面查看结果。`);
-          setProgress(90);
+          setError(`⏳ ${pollErrorMsg}`);
+          setProgress(95);
         }
       } else {
         // 处理错误
