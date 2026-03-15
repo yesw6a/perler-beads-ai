@@ -37,6 +37,30 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
     return handleAiOptimize(request);
   }
   
+  // 轮询端点
+  if (url.pathname === '/api/ai-optimize/poll') {
+    const searchParams = url.searchParams;
+    const taskId = searchParams.get('taskId');
+    if (!taskId) {
+      return new Response(
+        JSON.stringify({ error: 'Missing taskId parameter' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    // 从请求体获取 API Key
+    const body = await request.json().catch(() => ({}));
+    const apiKey = body.apiKey;
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: 'Missing apiKey in request body' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    return pollTaskResult(taskId, apiKey, corsHeaders);
+  }
+  
   return new Response(
     JSON.stringify({ error: 'Not found' }),
     { status: 404, headers: corsHeaders }
@@ -284,14 +308,16 @@ async function handleAiOptimize(request: Request): Promise<Response> {
 }
 
 // 轮询异步任务结果（wan2.6-image）
+// 注意：Cloudflare Workers 超时限制为 10 秒（免费计划）
+// 策略：快速轮询 5 次（10 秒），如果未完成，返回 task_id 让前端轮询
 async function pollTaskResult(taskId: string, apiKey: string, headers: Headers): Promise<Response> {
   const taskUrl = `https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`;
   
   console.log('Polling task result:', taskId);
   console.log('Task URL:', taskUrl);
   
-  // 轮询最多 60 次（约 2 分钟）
-  for (let attempt = 1; attempt <= 60; attempt++) {
+  // 快速轮询 5 次（10 秒内）
+  for (let attempt = 1; attempt <= 5; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     try {
@@ -316,10 +342,8 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
       const data = await responseClone.json();
       
       console.log(`[Poll ${attempt}] Task status:`, data.output?.task_status);
-      console.log('[Poll] Full response:', JSON.stringify(data, null, 2).substring(0, 500));
       
       if (data.output?.task_status === 'SUCCEEDED') {
-        // wan2.6-image 返回 results[0].url
         const imageUrl = data.output?.results?.[0]?.url;
         if (!imageUrl) {
           console.log('[Poll] Task succeeded but no image URL found');
@@ -354,9 +378,16 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
     }
   }
   
-  console.log('[Poll] Task timeout after 60 attempts');
+  // 10 秒内未完成，返回 task_id 让前端轮询
+  console.log('[Poll] Task not completed within 10s, returning task_id for client-side polling');
   return new Response(
-    JSON.stringify({ error: 'Task timeout. The image generation is taking longer than expected. Please try again.' }),
-    { status: 504, headers }
+    JSON.stringify({
+      success: false,
+      pending: true,
+      taskId: taskId,
+      message: 'Task is still processing. Please poll again with the task_id.',
+      pollUrl: `/api/ai-optimize/poll?taskId=${taskId}`
+    }),
+    { status: 202, headers }  // 202 Accepted
   );
 }

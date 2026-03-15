@@ -13,6 +13,9 @@ export interface AIOptimizeResult {
   success: boolean;
   imageUrl?: string;
   error?: string;
+  pending?: boolean;  // 任务进行中
+  taskId?: string;   // 异步任务 ID
+  message?: string;  // 额外信息
 }
 
 /**
@@ -182,6 +185,17 @@ export async function optimizeImageWithAI(
     onProgress?.(80);
 
     if (!response.ok) {
+      // 202 Accepted 表示任务进行中
+      if (response.status === 202) {
+        const result = await response.json();
+        return {
+          success: false,
+          pending: true,
+          taskId: result.taskId,
+          message: result.message
+        };
+      }
+      
       // 尝试解析 JSON 错误
       let errorMessage: string;
       try {
@@ -202,6 +216,13 @@ export async function optimizeImageWithAI(
       return {
         success: true,
         imageUrl: result.imageUrl
+      };
+    } else if (result.pending && result.taskId) {
+      return {
+        success: false,
+        pending: true,
+        taskId: result.taskId,
+        message: result.message
       };
     } else {
       throw new Error(result.error || 'Unknown error');

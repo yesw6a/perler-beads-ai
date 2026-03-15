@@ -65,6 +65,43 @@ export default function AIOptimizeModal({
     }
   }, [apiKey, modelName]);
 
+  // 轮询任务结果
+  const pollTaskResult = useCallback(async (taskId: string, maxAttempts: number = 60): Promise<string | null> => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      try {
+        const response = await fetch(`/api/ai-optimize/poll?taskId=${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: apiKey.trim() })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success && result.imageUrl) {
+          return result.imageUrl;
+        }
+        
+        if (result.pending) {
+          setProgress(Math.min(90, 10 + Math.floor((attempt / maxAttempts) * 80)));
+          continue;
+        }
+        
+        throw new Error(result.error || result.message || 'Task failed');
+        
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Poll error';
+        if (attempt >= maxAttempts) {
+          throw new Error('Task timeout. Please try again.');
+        }
+        console.log(`Poll attempt ${attempt} error:`, errorMsg);
+      }
+    }
+    
+    throw new Error('Task timeout');
+  }, [apiKey]);
+
   const handleOptimize = useCallback(async () => {
     if (!imageSrc) return;
 
@@ -102,6 +139,16 @@ export default function AIOptimizeModal({
         // 下载优化后的图片
         const dataUrl = await downloadImageAsDataURL(result.imageUrl);
         setPreviewImage(dataUrl);
+      } else if (result.pending && result.taskId) {
+        // 任务进行中，开始轮询
+        console.log('Task pending, starting polling:', result.taskId);
+        setProgress(10);
+        
+        const imageUrl = await pollTaskResult(result.taskId);
+        if (imageUrl) {
+          const dataUrl = await downloadImageAsDataURL(imageUrl);
+          setPreviewImage(dataUrl);
+        }
       } else {
         // 处理错误
         let errorMessage = result.error || '优化失败，请重试';
@@ -123,13 +170,15 @@ export default function AIOptimizeModal({
         errorMessage = '图片未能通过安全检测，请尝试使用其他图片。';
       } else if (errorMessage.includes('network') || errorMessage.includes('Network')) {
         errorMessage = '网络连接失败，请检查：\n• 网络连接是否正常\n• API Key 是否正确\n• 阿里云服务是否可用';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+        errorMessage = '任务超时，AI 生成需要较长时间（1-2 分钟）。\n请等待片刻后重试，或检查阿里云账号状态。';
       }
 
       setError(errorMessage);
     } finally {
       setIsProcessing(false);
     }
-  }, [imageSrc, customPrompt, apiKey, modelName, saveConfig]);
+  }, [imageSrc, customPrompt, apiKey, modelName, saveConfig, pollTaskResult]);
 
   const handleConfirm = useCallback(() => {
     if (previewImage) {
