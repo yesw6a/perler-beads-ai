@@ -114,42 +114,57 @@ async function handleAiOptimize(request: Request): Promise<Response> {
     
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        console.log(`Attempt ${attempt}: Calling ${ALIBABA_API_URL}`);
+        console.log('Request body:', JSON.stringify({ model, prompt: prompt.substring(0, 50) + '...' }));
+        
         response = await fetch(ALIBABA_API_URL, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(requestBody)
+          body: JSON.stringify(requestBody),
+          // 增加超时时间
+          cf: {
+            timeout: 60000
+          }
         });
+        
+        console.log(`Response status: ${response.status}`);
         
         if (response.ok) {
           break;
         }
         
-        lastError = new Error(`HTTP ${response.status}`);
-        console.log(`Attempt ${attempt} failed: HTTP ${response.status}`);
+        const errorText = await response.text();
+        console.log(`Attempt ${attempt} failed: HTTP ${response.status}`, errorText);
+        lastError = new Error(`HTTP ${response.status}: ${errorText}`);
         
         // 等待一段时间后重试
         if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
         }
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Unknown error');
-        console.log(`Attempt ${attempt} failed:`, lastError.message);
+        lastError = error instanceof Error ? error : new Error('Network connection lost');
+        console.log(`Attempt ${attempt} network error:`, lastError.message);
+        console.log('Full error:', error);
         
         if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
         }
       }
     }
 
     if (!response) {
       console.error('All attempts failed');
+      const errorMsg = lastError?.message || 'Network connection lost';
+      console.error('Final error:', errorMsg);
+      
       return new Response(
         JSON.stringify({ 
           error: 'AI optimization failed',
-          message: lastError?.message || 'Network connection lost. Please check your API key and try again.'
+          message: errorMsg + '. Please check: 1) API Key is valid, 2) Network connection, 3) Try again later',
+          debug: lastError?.toString()
         }),
         { status: 500, headers }
       );
