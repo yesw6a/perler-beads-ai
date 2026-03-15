@@ -1,5 +1,10 @@
 # 🚀 Cloudflare Pages 部署指南
 
+**更新时间**: 2026-03-15
+**更新者**: 宁姚 🗡️
+
+---
+
 ## 快速部署
 
 ### 方法 1: Cloudflare Dashboard
@@ -22,10 +27,10 @@
    Build output directory: .next
    ```
 
-5. **环境变量**
+5. **环境变量** ⭐ **重要**
    ```
-   AI_API_KEY=你的火山引擎 API Key
-   AI_API_SECRET=你的火山引擎 API Secret
+   ALIBABA_API_KEY=你的阿里云百炼 API Key
+   MODEL_NAME=wanx-v1
    ```
 
 6. **部署**
@@ -55,9 +60,8 @@ wrangler pages deploy .next --project-name=perler-beads-ai
 perler-beads-ai/
 ├── src/                    # 源代码
 ├── public/                 # 静态资源
-├── _headers                # Cloudflare 安全头 ⭐ 新增
-├── _redirects              # Cloudflare 重定向 ⭐ 新增
-├── wrangler.toml           # Wrangler 配置 ⭐ 新增
+├── _headers                # Cloudflare 安全头 ⭐
+├── _redirects              # Cloudflare 重定向 ⭐
 ├── next.config.ts          # Next.js 配置
 └── package.json            # 依赖配置
 ```
@@ -77,12 +81,6 @@ perler-beads-ai/
 
 - SPA 路由支持，所有请求重定向到 index.html
 
-### wrangler.toml
-
-- 本地开发服务器配置
-- 部署包含/排除文件配置
-- 环境变量配置
-
 ---
 
 ## 🎯 自定义域名 (可选)
@@ -97,12 +95,26 @@ perler-beads-ai/
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `AI_API_KEY` | 火山引擎 API Key | - |
-| `AI_API_SECRET` | 火山引擎 API Secret | - |
+| `ALIBABA_API_KEY` | **阿里云百炼 API Key** (必填) | - |
+| `MODEL_NAME` | 模型名称 | `wanx-v1` |
+| `DASHSCOPE_API_KEY` | DashScope API Key (备选) | - |
 | `APP_NAME` | 应用名称 | perler-beads-ai |
 | `APP_VERSION` | 版本号 | 0.1.0 |
 
-可在 Cloudflare Dashboard 中添加更多环境变量。
+### 环境变量说明
+
+**ALIBABA_API_KEY** (推荐):
+- 获取地址：https://bailian.console.aliyun.com/cn-beijing/?tab=api
+- 格式：`sk-xxxxxxxxxxxxxxxx`
+
+**MODEL_NAME** (可选):
+- `wanx-v1` - 通义万相 v1（默认）
+- `wanx2.1-pro-turbo-v1` - 通义万相 2.1 Pro 加速版
+- `wanx2.1-turbo-v1` - 通义万相 2.1 加速版
+
+**DASHSCOPE_API_KEY** (备选):
+- 如果 ALIBABA_API_KEY 未设置，会使用此变量
+- DashScope 兼容模式
 
 ---
 
@@ -111,6 +123,11 @@ perler-beads-ai/
 ```bash
 # 安装依赖
 npm install
+
+# 创建 .env.local 文件
+cp .env.local.example .env.local
+
+# 编辑 .env.local，填写 API Key
 
 # 启动开发服务器
 npm run dev
@@ -125,11 +142,10 @@ npm run dev
 - [ ] 已 Fork 仓库到 GitHub
 - [ ] 已添加 `_headers` 文件
 - [ ] 已添加 `_redirects` 文件
-- [ ] 已添加 `wrangler.toml`
 - [ ] 已添加 `.gitignore`
 - [ ] 已推送到 GitHub
 - [ ] Cloudflare Pages 已连接
-- [ ] 环境变量已配置
+- [ ] **环境变量已配置** (ALIBABA_API_KEY, MODEL_NAME)
 - [ ] 部署成功
 - [ ] 自定义域名 (可选)
 
@@ -153,7 +169,7 @@ wrangler pages deploy .next --project-name=perler-beads-ai
 
 1. 检查 Cloudflare Build Logs
 2. 确认 Next.js 构建成功
-3. 检查 _headers 格式
+3. 检查依赖安装
 
 ### 页面空白
 
@@ -163,12 +179,32 @@ wrangler pages deploy .next --project-name=perler-beads-ai
 
 ### API 错误
 
-1. 确认环境变量已配置
-2. 检查 API Key 格式
+1. **确认环境变量已配置** (ALIBABA_API_KEY)
+2. 检查 API Key 格式（以 `sk-` 开头）
 3. 查看 API 调用日志
+4. 确认账号已开通通义万相服务
+
+### 安全检测失败
+
+错误：`图片未能通过安全检测`
+
+解决：
+- 更换其他图片
+- 确保图片内容合规
+- 避免敏感内容
 
 ---
 
-**部署时间**: 2026-03-13  
+## 🔗 相关文档
+
+- **配置指南**: `BAILIAN-CONFIG.md`
+- **API 文档**: `api.md`
+- **阿里云百炼**: https://bailian.console.aliyun.com/
+- **DashScope**: https://help.aliyun.com/zh/dashscope
+
+---
+
+**部署时间**: 2026-03-15  
 **版本**: 0.1.0  
-**作者**: 宁姚 🗡️
+**作者**: 宁姚 🗡️  
+**API 提供商**: 阿里云百炼
