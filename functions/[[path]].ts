@@ -1,26 +1,45 @@
 /**
- * Cloudflare Pages Function - AI 优化图片
- * 使用阿里云百炼 API (通义万相)
+ * Cloudflare Pages Function - 路由处理器
+ * 处理所有 /api/* 路由
  */
 
 import { ExecutionContext } from '@cloudflare/workers-types';
 
-// 阿里云百炼 API 配置
-const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations';
-
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+// 处理 OPTIONS 请求 (CORS preflight)
+export async function onRequestOptions(context: EventContext): Promise<Response> {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders
+  });
+}
+
+// 处理 POST 请求
 export async function onRequestPost(context: EventContext): Promise<Response> {
   const { request, env } = context;
+  const url = new URL(request.url);
+  
+  // 路由到具体的 API 处理函数
+  if (url.pathname === '/api/ai-optimize') {
+    return handleAiOptimize(request, env);
+  }
+  
+  return new Response(
+    JSON.stringify({ error: 'Not found' }),
+    { status: 404, headers: corsHeaders }
+  );
+}
 
-  // 添加 CORS headers
+// AI 优化处理函数
+async function handleAiOptimize(request: Request, env: any): Promise<Response> {
   const headers = new Headers(corsHeaders);
-
+  
   try {
     const { imageBase64, prompt } = await request.json();
 
@@ -48,6 +67,9 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
     }
 
     const modelName = env.MODEL_NAME || 'wanx-v1';
+
+    // 阿里云百炼 API 端点 - OpenAI 兼容模式
+    const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
@@ -133,12 +155,4 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
       { status: 500, headers }
     );
   }
-}
-
-// 处理 OPTIONS 请求 (CORS preflight)
-export async function onRequestOptions(context: EventContext): Promise<Response> {
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders
-  });
 }
