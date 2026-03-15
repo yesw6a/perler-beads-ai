@@ -7,9 +7,9 @@
 
 import { ExecutionContext } from '@cloudflare/workers-types';
 
-// 阿里云百炼 API 配置 - 通义万相 wanx-v1（支持 Base64）
-// 文档：https://help.aliyun.com/zh/dashscope/developer-reference/wanx-api
-const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations';
+// 阿里云百炼 API 配置 - wan2.6-image（异步任务模式）
+// 文档：https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market/detail/wan2.6-image
+const ALIBABA_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation';
 
 // CORS headers
 const corsHeaders = {
@@ -87,21 +87,40 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       );
     }
 
-    // 强制使用 wanx-v1（通义万相，支持 Base64）
-    const model = 'wanx-v1';
+    // 使用 wan2.6-image（异步任务模式）
+    const model = 'wan2.6-image';
 
     // 处理 Base64 数据
     const base64Data = imageBase64.includes(',')
       ? imageBase64.split(',')[1]
       : imageBase64;
 
-    // wan2.6-image 请求格式（OpenAI 兼容模式）
+    // wan2.6-image 请求格式（异步任务模式）
+    // 文档：https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market/detail/wan2.6-image
     const requestBody = {
       model: model,
-      prompt: prompt,
-      image: `data:image/png;base64,${base64Data}`,  // 支持 Base64 data URI
-      n: 1,
-      size: '1024x1024'
+      input: {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                image: `data:image/png;base64,${base64Data}`
+              },
+              {
+                type: 'text',
+                text: prompt
+              }
+            ]
+          }
+        ]
+      },
+      parameters: {
+        n: 1,
+        size: '1024*1024',
+        enable_interleave: true
+      }
     };
 
     console.log('Submitting AI optimization task...');
@@ -119,12 +138,13 @@ async function handleAiOptimize(request: Request): Promise<Response> {
         console.log('[Request] Prompt:', prompt.substring(0, 100) + '...');
         console.log('[Request] API Key:', apiKey.substring(0, 10) + '...');
         
-        // 构建 fetch 选项
+        // 构建 fetch 选项（异步任务模式）
         const fetchOptions: RequestInit = {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-DashScope-Async': 'enable'  // 启用异步模式
           },
           body: JSON.stringify(requestBody)
         };
@@ -137,7 +157,7 @@ async function handleAiOptimize(request: Request): Promise<Response> {
         console.log('[Fetch] Response OK:', response.ok);
         
         if (response.ok) {
-          console.log('[Fetch] Success!');
+          console.log('[Fetch] Task submitted!');
           break;
         }
         
@@ -210,7 +230,7 @@ async function handleAiOptimize(request: Request): Promise<Response> {
 
         if (errorCode === 'ModelNotFound') {
           return new Response(
-            JSON.stringify({ error: `Model not found: ${model}. Please use 'wan2.6-image' or 'wanx-v1'.` }),
+            JSON.stringify({ error: `Model not found: ${model}.` }),
             { status: 400, headers }
           );
         }
@@ -234,33 +254,22 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       }
     }
 
+    // 异步任务模式响应
     const data = JSON.parse(responseText);
     
-    // Qwen-Image 2.0 响应格式
-    if (!data.output || !data.output.results || !data.output.results[0] || !data.output.results[0].url) {
-      // 检查是否是异步任务
-      if (data.output && data.output.task_id) {
-        console.log('Async task created:', data.output.task_id);
-        return await pollTaskResult(data.output.task_id, apiKey, headers);
-      }
-      
+    // wan2.6-image 返回 task_id
+    if (!data.output || !data.output.task_id) {
       return new Response(
         JSON.stringify({ error: 'Invalid response format from API', raw: data }),
         { status: 500, headers }
       );
     }
 
-    const imageUrl = data.output.results[0].url;
-    console.log('AI optimization completed');
+    const taskId = data.output.task_id;
+    console.log('Async task created:', taskId);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        imageUrl: imageUrl,
-        model: model
-      }),
-      { status: 200, headers }
-    );
+    // 轮询获取结果
+    return await pollTaskResult(taskId, apiKey, headers);
 
   } catch (error) {
     console.error('AI optimization error:', error);
@@ -274,16 +283,20 @@ async function handleAiOptimize(request: Request): Promise<Response> {
   }
 }
 
-// 轮询异步任务结果
+// 轮询异步任务结果（wan2.6-image）
 async function pollTaskResult(taskId: string, apiKey: string, headers: Headers): Promise<Response> {
   const taskUrl = `https://dashscope.aliyuncs.com/api/v1/tasks/${taskId}`;
   
   console.log('Polling task result:', taskId);
+  console.log('Task URL:', taskUrl);
   
-  for (let attempt = 1; attempt <= 30; attempt++) {
+  // 轮询最多 60 次（约 2 分钟）
+  for (let attempt = 1; attempt <= 60; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     try {
+      console.log(`[Poll ${attempt}] Fetching task status...`);
+      
       const response = await fetch(taskUrl, {
         method: 'GET',
         headers: {
@@ -292,37 +305,58 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
         }
       });
       
-      // 克隆响应以便读取
+      console.log(`[Poll ${attempt}] Response status:`, response.status);
+      
+      if (!response.ok) {
+        console.log(`[Poll ${attempt}] Task query failed:`, response.status);
+        continue;
+      }
+      
       const responseClone = response.clone();
       const data = await responseClone.json();
-      console.log(`Task status (attempt ${attempt}):`, data.output?.task_status);
+      
+      console.log(`[Poll ${attempt}] Task status:`, data.output?.task_status);
+      console.log('[Poll] Full response:', JSON.stringify(data, null, 2).substring(0, 500));
       
       if (data.output?.task_status === 'SUCCEEDED') {
-        const imageUrl = data.output.results[0].url;
+        // wan2.6-image 返回 results[0].url
+        const imageUrl = data.output?.results?.[0]?.url;
+        if (!imageUrl) {
+          console.log('[Poll] Task succeeded but no image URL found');
+          continue;
+        }
+        console.log('[Poll] Task completed! Image URL:', imageUrl);
         return new Response(
           JSON.stringify({
             success: true,
             imageUrl: imageUrl,
-            model: 'wan2.6-image'
+            model: 'wan2.6-image',
+            taskId: taskId
           }),
           { status: 200, headers }
         );
       }
       
       if (data.output?.task_status === 'FAILED') {
+        const errorMsg = data.output?.message || data.output?.error || 'Unknown error';
+        console.log('[Poll] Task failed:', errorMsg);
         return new Response(
-          JSON.stringify({ error: 'Task failed: ' + (data.output?.message || 'Unknown error') }),
+          JSON.stringify({ error: 'Task failed: ' + errorMsg }),
           { status: 500, headers }
         );
       }
       
+      // 其他状态：PENDING, RUNNING 等，继续轮询
+      console.log(`[Poll ${attempt}] Task still processing:`, data.output?.task_status);
+      
     } catch (error) {
-      console.log('Poll error:', error.message);
+      console.log(`[Poll ${attempt}] Error:`, error instanceof Error ? error.message : error);
     }
   }
   
+  console.log('[Poll] Task timeout after 60 attempts');
   return new Response(
-    JSON.stringify({ error: 'Task timeout. Please try again.' }),
+    JSON.stringify({ error: 'Task timeout. The image generation is taking longer than expected. Please try again.' }),
     { status: 504, headers }
   );
 }
