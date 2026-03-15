@@ -114,32 +114,37 @@ async function handleAiOptimize(request: Request): Promise<Response> {
     
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`Attempt ${attempt}: Calling ${ALIBABA_API_URL}`);
-        console.log('Request body:', JSON.stringify({ model, prompt: prompt.substring(0, 50) + '...' }));
+        console.log(`[Attempt ${attempt}] Calling: ${ALIBABA_API_URL}`);
+        console.log('[Request] Model:', model);
+        console.log('[Request] Prompt:', prompt.substring(0, 100) + '...');
+        console.log('[Request] API Key:', apiKey.substring(0, 10) + '...');
         
-        response = await fetch(ALIBABA_API_URL, {
+        // 构建 fetch 选项
+        const fetchOptions: RequestInit = {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(requestBody),
-          // 增加超时时间
-          cf: {
-            timeout: 60000
-          }
-        });
+          body: JSON.stringify(requestBody)
+        };
         
-        console.log(`Response status: ${response.status}`);
+        console.log('[Fetch] Starting request...');
+        
+        response = await fetch(ALIBABA_API_URL, fetchOptions);
+        
+        console.log('[Fetch] Response status:', response.status);
+        console.log('[Fetch] Response OK:', response.ok);
         
         if (response.ok) {
+          console.log('[Fetch] Success!');
           break;
         }
         
         // 克隆响应以便读取 body
         const errorResponse = response.clone();
         const errorText = await errorResponse.text();
-        console.log(`Attempt ${attempt} failed: HTTP ${response.status}`, errorText);
+        console.log(`[Attempt ${attempt}] Failed: HTTP ${response.status}`, errorText);
         lastError = new Error(`HTTP ${response.status}: ${errorText}`);
         
         // 等待一段时间后重试
@@ -147,9 +152,12 @@ async function handleAiOptimize(request: Request): Promise<Response> {
           await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
         }
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Network connection lost');
-        console.log(`Attempt ${attempt} network error:`, lastError.message);
-        console.log('Full error:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        lastError = error instanceof Error ? error : new Error('Network connection lost: ' + errorMsg);
+        console.log(`[Attempt ${attempt}] Network error:`, errorMsg);
+        console.log('[Error details]:', error);
+        console.log('[Error type]:', typeof error);
+        console.log('[Error constructor]:', error?.constructor?.name);
         
         if (attempt < 3) {
           await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
