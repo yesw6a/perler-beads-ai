@@ -96,16 +96,14 @@ async function handleAiOptimize(request: Request): Promise<Response> {
       : imageBase64;
 
     // Qwen-Image 2.0 请求格式
+    // 文档：https://help.aliyun.com/zh/dashscope/developer-reference/qwen-vl-api
     const requestBody = {
       model: model,
       input: {
-        image: `data:image/png;base64,${base64Data}`,
-        prompt: prompt
+        image: `data:image/png;base64,${base64Data}`  // Base64 data URI 格式
       },
       parameters: {
-        style: '<auto>',
-        size: '1024*1024',
-        n: 1
+        prompt: prompt  // prompt 放在 parameters 里
       }
     };
 
