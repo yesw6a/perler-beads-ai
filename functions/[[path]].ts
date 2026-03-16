@@ -349,8 +349,25 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
       console.log(`[Poll ${attempt}] Task status:`, data.output?.task_status);
       
       if (data.output?.task_status === 'SUCCEEDED') {
-        // wan2.6-image 返回格式可能是 output.results[0].url 或 output.image
-        let imageUrl = data.output?.results?.[0]?.url || data.output?.image?.url || data.output?.image;
+        // wan2.6-image 返回格式（新版 API）
+        // 结构：output.choices[0].message.content[].image (图文混排)
+        // 旧版：output.results[0].url 或 output.image?.url
+        let imageUrl: string | undefined;
+        
+        // 1. 新版 API 结构（图文混排）- 优先检查
+        if (data.output?.choices?.[0]?.message?.content) {
+          const content = data.output.choices[0].message.content;
+          const imageItem = content.find((item: any) => item?.type === 'image');
+          imageUrl = imageItem?.image;
+          if (imageUrl) {
+            console.log('[Poll] Found image in choices[].message.content[]:', imageUrl);
+          }
+        }
+        
+        // 2. 旧版 API 结构（兼容）
+        if (!imageUrl) {
+          imageUrl = data.output?.results?.[0]?.url || data.output?.image?.url || data.output?.image;
+        }
         
         if (!imageUrl) {
           console.log('[Poll] Task succeeded but no image URL found');
