@@ -336,7 +336,7 @@ export default function AIOptimizeModal({
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
               </svg>
-              API 配置（首次使用需要，之后会自动保存）
+              API 配置 {debugMode ? '(调试模式下不需要)' : '（首次使用需要，之后会自动保存）'}
             </h3>
             
             <div className="grid grid-cols-2 gap-4">
@@ -524,7 +524,7 @@ export default function AIOptimizeModal({
               )}
               <button
                 onClick={handleOptimize}
-                disabled={isProcessing || !apiKey.trim()}
+                disabled={isProcessing || (!debugMode && !apiKey.trim())}
                 className="px-6 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
                 {isProcessing ? (
