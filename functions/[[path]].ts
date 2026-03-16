@@ -66,6 +66,29 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
     return pollTaskResult(taskId, finalApiKey, corsHeaders);
   }
   
+  // 图片代理端点（解决阿里云 OSS 跨域问题）
+  if (url.pathname === '/api/image-proxy') {
+    const searchParams = url.searchParams;
+    const imageUrl = searchParams.get('url');
+    
+    if (!imageUrl) {
+      return new Response(
+        JSON.stringify({ error: 'Missing url parameter' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    // 验证 URL 是阿里云 OSS 域名
+    if (!imageUrl.includes('dashscope') && !imageUrl.includes('aliyuncs.com')) {
+      return new Response(
+        JSON.stringify({ error: 'Only Aliyun OSS URLs are allowed' }),
+        { status: 403, headers: corsHeaders }
+      );
+    }
+    
+    return proxyImageUrl(imageUrl, corsHeaders);
+  }
+  
   return new Response(
     JSON.stringify({ error: 'Not found' }),
     { status: 404, headers: corsHeaders }
@@ -417,4 +440,52 @@ async function pollTaskResult(taskId: string, apiKey: string, headers: Headers):
     }),
     { status: 202, headers }  // 202 Accepted
   );
+}
+
+// 图片代理函数（解决阿里云 OSS 跨域问题）
+async function proxyImageUrl(imageUrl: string, headers: Record<string, string>): Promise<Response> {
+  try {
+    console.log('[Proxy] Fetching image:', imageUrl);
+    
+    // 从阿里云 OSS 获取图片
+    const response = await fetch(imageUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'PerlerBeadsAI/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      console.log('[Proxy] Failed to fetch image:', response.status);
+      return new Response(
+        JSON.stringify({ error: `Failed to fetch image: ${response.status}` }),
+        { status: response.status, headers }
+      );
+    }
+    
+    // 获取图片内容
+    const imageBlob = await response.blob();
+    const contentType = response.headers.get('Content-Type') || 'image/png';
+    
+    console.log('[Proxy] Image fetched successfully:', contentType, imageBlob.size);
+    
+    // 返回给前端，添加 CORS 头
+    return new Response(imageBlob, {
+      status: 200,
+      headers: {
+        ...headers,
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400',  // 缓存 1 天
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Proxy] Error:', error instanceof Error ? error.message : error);
+    return new Response(
+      JSON.stringify({ error: 'Proxy error: ' + (error instanceof Error ? error.message : 'Unknown error') }),
+      { status: 500, headers }
+    );
+  }
 }
