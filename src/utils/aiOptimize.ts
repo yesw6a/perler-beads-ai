@@ -238,10 +238,20 @@ export async function optimizeImageWithAI(
 }
 
 /**
- * 下载远程图片并转换为 DataURL
+ * 下载远程图片并转换为 DataURL（使用代理解决跨域问题）
  */
 export async function downloadImageAsDataURL(imageUrl: string): Promise<string> {
-  const response = await fetch(imageUrl);
+  // 如果是阿里云 OSS 图片，使用代理端点解决跨域问题
+  const fetchUrl = (imageUrl.includes('dashscope') || imageUrl.includes('aliyuncs.com'))
+    ? `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
+    : imageUrl;
+  
+  const response = await fetch(fetchUrl);
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`);
+  }
+  
   const blob = await response.blob();
 
   return new Promise((resolve, reject) => {
