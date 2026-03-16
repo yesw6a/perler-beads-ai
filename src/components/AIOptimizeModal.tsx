@@ -138,18 +138,23 @@ export default function AIOptimizeModal({
   const handleOptimize = useCallback(async () => {
     if (!imageSrc) return;
 
-    // 调试模式：直接使用指定图片 URL（不调用 API）
-    if (debugMode && debugImageUrl.trim()) {
+    // 🐛 调试模式：直接使用指定图片 URL（不调用 API）- 优先判断
+    console.log('[DebugMode] debugMode:', debugMode, 'debugImageUrl:', debugImageUrl?.trim());
+    
+    if (debugMode && debugImageUrl && debugImageUrl.trim()) {
+      console.log('[DebugMode] Using debug image URL:', debugImageUrl.trim());
       setIsProcessing(true);
       setProgress(0);
       setError(null);
       
       try {
-        // 直接下载调试图片
+        // 直接下载调试图片（使用代理解决跨域）
         const dataUrl = await downloadImageAsDataURL(debugImageUrl.trim());
+        console.log('[DebugMode] Image loaded successfully:', dataUrl.substring(0, 50) + '...');
         setPreviewImage(dataUrl);
         setProgress(100);
       } catch (err) {
+        console.error('[DebugMode] Error:', err);
         setError('调试图片加载失败：' + (err instanceof Error ? err.message : '未知错误'));
       } finally {
         setIsProcessing(false);
@@ -157,7 +162,8 @@ export default function AIOptimizeModal({
       return;
     }
 
-    // 验证 API Key
+    // 正常模式：验证 API Key
+    console.log('[NormalMode] Validating API Key...');
     if (!apiKey.trim()) {
       setError('请输入阿里云百炼 API Key（格式：sk-开头）');
       return;
