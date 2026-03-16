@@ -50,9 +50,20 @@ export default function AIOptimizeModal({
   const [debugMode, setDebugMode] = useState(false);
   const [debugImageUrl, setDebugImageUrl] = useState('');
 
-  // 从 LocalStorage 加载配置
+  // 从 LocalStorage 加载配置 + 重置状态
   useEffect(() => {
     if (isOpen) {
+      // 重置所有状态（包括调试模式）
+      setIsProcessing(false);
+      setProgress(0);
+      setError(null);
+      setPreviewImage(null);
+      setPollingStatus(null);
+      setShouldStopPolling(false);
+      setDebugMode(false);
+      setDebugImageUrl('');
+      
+      // 加载保存的配置
       const savedApiKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
       const savedModelName = localStorage.getItem(STORAGE_KEYS.MODEL_NAME);
       
@@ -247,7 +258,7 @@ export default function AIOptimizeModal({
       setIsProcessing(false);
       setShouldStopPolling(false);  // 重置停止标志
     }
-  }, [imageSrc, customPrompt, apiKey, modelName, saveConfig, pollTaskResult]);
+  }, [imageSrc, customPrompt, apiKey, modelName, saveConfig, pollTaskResult, debugMode, debugImageUrl]);
 
   // 取消轮询
   const handleStopPolling = useCallback(() => {
@@ -266,6 +277,7 @@ export default function AIOptimizeModal({
     setPreviewImage(null);
     setError(null);
     setProgress(0);
+    // 不重置调试模式，方便用户重复测试
   }, []);
 
   const handleClearApiKey = useCallback(() => {
