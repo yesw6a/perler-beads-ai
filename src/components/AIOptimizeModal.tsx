@@ -387,9 +387,10 @@ export default function AIOptimizeModal({
               <div className="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 flex items-center justify-center">
                 {previewImage ? (
                   <img
-                    src={previewImage}
+                    src={previewImage.startsWith('http') ? `/api/image-proxy?url=${encodeURIComponent(previewImage)}` : previewImage}
                     alt="Optimized"
                     className="w-full h-full object-contain"
+                    crossOrigin="anonymous"
                   />
                 ) : isProcessing ? (
                   <div className="text-center p-4">
