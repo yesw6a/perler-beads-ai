@@ -27,6 +27,40 @@ export async function onRequestOptions(context: EventContext): Promise<Response>
   });
 }
 
+// 处理 GET 请求
+export async function onRequestGet(context: EventContext): Promise<Response> {
+  const { request } = context;
+  const url = new URL(request.url);
+  
+  // 图片代理端点（解决阿里云 OSS 跨域问题）- GET 请求
+  if (url.pathname === '/api/image-proxy') {
+    const searchParams = url.searchParams;
+    const imageUrl = searchParams.get('url');
+    
+    if (!imageUrl) {
+      return new Response(
+        JSON.stringify({ error: 'Missing url parameter' }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    // 验证 URL 是阿里云 OSS 域名
+    if (!imageUrl.includes('dashscope') && !imageUrl.includes('aliyuncs.com')) {
+      return new Response(
+        JSON.stringify({ error: 'Only Aliyun OSS URLs are allowed' }),
+        { status: 403, headers: corsHeaders }
+      );
+    }
+    
+    return proxyImageUrl(imageUrl, corsHeaders);
+  }
+  
+  return new Response(
+    JSON.stringify({ error: 'Not found' }),
+    { status: 404, headers: corsHeaders }
+  );
+}
+
 // 处理 POST 请求
 export async function onRequestPost(context: EventContext): Promise<Response> {
   const { request } = context;
@@ -64,29 +98,6 @@ export async function onRequestPost(context: EventContext): Promise<Response> {
     }
     
     return pollTaskResult(taskId, finalApiKey, corsHeaders);
-  }
-  
-  // 图片代理端点（解决阿里云 OSS 跨域问题）
-  if (url.pathname === '/api/image-proxy') {
-    const searchParams = url.searchParams;
-    const imageUrl = searchParams.get('url');
-    
-    if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ error: 'Missing url parameter' }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    
-    // 验证 URL 是阿里云 OSS 域名
-    if (!imageUrl.includes('dashscope') && !imageUrl.includes('aliyuncs.com')) {
-      return new Response(
-        JSON.stringify({ error: 'Only Aliyun OSS URLs are allowed' }),
-        { status: 403, headers: corsHeaders }
-      );
-    }
-    
-    return proxyImageUrl(imageUrl, corsHeaders);
   }
   
   return new Response(
